@@ -2,6 +2,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
+    // UUID generate function
     function generateUUID() {
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         const r = Math.random() * 16 | 0;
@@ -10,12 +11,15 @@ export default {
       });
     }
     
+    // Main VLESS configuration generator
     if (url.pathname === '/vless' || url.pathname === '/') {
       const uuid = generateUUID();
-      const workerDomain = 'my-vless-3.workers.dev';
+      const workerDomain = 'my-vless-003.workers.dev';
       
-      const vlessLink = `vless://${uuid}@${workerDomain}:443?encryption=none&security=tls&type=ws&host=${workerDomain}&path=%2Fvless#CF-VLESS-2`;
+      // VLESS URL format
+      const vlessLink = `vless://${uuid}@${workerDomain}:443?encryption=none&security=tls&type=ws&host=${workerDomain}&path=%2Fvless#CF-VLESS-Worker`;
       
+      // HTML response with the config
       const htmlResponse = `
         <!DOCTYPE html>
         <html>
@@ -33,7 +37,7 @@ export default {
         </head>
         <body>
             <div class="container">
-                <h1>🚀 VLESS Configuration Generator v2</h1>
+                <h1>🚀 VLESS Configuration Generator</h1>
                 <p>Auto-generated VLESS config for Cloudflare Worker</p>
                 
                 <div class="config-box">
@@ -78,9 +82,10 @@ export default {
       });
     }
     
+    // API endpoint for raw config
     if (url.pathname === '/config.json') {
       const uuid = generateUUID();
-      const workerDomain = 'my-vless-2.workers.dev';
+      const workerDomain = 'my-vless-001.workers.dev';
       
       const config = {
         "server": workerDomain,
@@ -92,26 +97,4 @@ export default {
         "tls": true
       };
       
-      return new Response(JSON.stringify(config, null, 2), {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-    }
-    
-    if (url.pathname === '/raw') {
-      const uuid = generateUUID();
-      const workerDomain = 'my-vless-2.workers.dev';
-      const vlessLink = `vless://${uuid}@${workerDomain}:443?encryption=none&security=tls&type=ws&host=${workerDomain}&path=%2Fvless#CF-VLESS-2`;
-      
-      return new Response(vlessLink);
-    }
-    
-    return new Response('Not Found - Use /vless path for configuration', { 
-      status: 404,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-      }
-    });
-  },
-};
+      return new Response(JSON.stringify(config
