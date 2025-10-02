@@ -12,7 +12,7 @@ export default {
     
     if (url.pathname === '/vless' || url.pathname === '/') {
       const uuid = generateUUID();
-      const workerDomain = 'my-vless-2.workers.dev';
+      const workerDomain = 'my-vless-3.workers.dev';
       
       const vlessLink = `vless://${uuid}@${workerDomain}:443?encryption=none&security=tls&type=ws&host=${workerDomain}&path=%2Fvless#CF-VLESS-2`;
       
