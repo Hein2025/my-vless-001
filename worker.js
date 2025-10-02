@@ -1,100 +1,101 @@
+// VLESS Configuration Settings
+// 1. UUID (from uuidgenerator.net)
+const USERS_UUIDS_RAW = "3fd2a55d-2dbc-4192-aa3e-bb7b45afcaea"; 
+
+// 2. Clean IP/Domain for Real Outbound Traffic (Port 443 open)
+const PROXY_IP = "www.google.com"; 
+
+// --------------------------------------------------------------------------------------
+// Core Logic (Do not modify below this line)
+// --------------------------------------------------------------------------------------
+
+const USERS_UUIDS = USERS_UUIDS_RAW.split(',').map(uuid => uuid.trim()).filter(uuid => uuid.length > 0);
+const PATH_PREFIX = '/sub/';
+
 export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    
-    // UUID generate function
-    function generateUUID() {
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0;
-        const v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-      });
+    async fetch(request, env, ctx) {
+        const url = new URL(request.url);
+
+        // VLESS Subscription Link Generator
+        if (url.pathname.startsWith(PATH_PREFIX) && request.method === 'GET') {
+            const uuid_from_path = url.pathname.substring(PATH_PREFIX.length);
+            
+            if (!uuid_from_path || !USERS_UUIDS.includes(uuid_from_path)) {
+                 return new Response("Invalid UUID for subscription.", { status: 404 });
+            }
+
+            const host = url.hostname;
+            const path = url.pathname; 
+            
+            // VLESS Link format (WS + TLS + SNI + ProxyIP)
+            const vless_link = `vless://${uuid_from_path}@${PROXY_IP}:443?encryption=none&security=tls&sni=${host}&fp=chrome&type=ws&host=${host}&path=${path}#CF-VLESS-Worker`;
+            
+            // Base64-encoded subscription content
+            const base64_content = btoa(vless_link);
+            
+            return new Response(base64_content, {
+                headers: {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Content-Disposition': 'attachment; filename="vless_sub.txt"'
+                }
+            });
+        }
+
+        // VLESS Protocol (WebSocket) Handling - Outbound Traffic Relay
+        if (request.headers.get('Upgrade') === 'websocket') {
+            
+            const webSocketPair = new WebSocketPair();
+            const [client, worker] = Object.values(webSocketPair);
+            
+            try {
+                // Establish Real Outbound TCP connection to PROXY_IP
+                const proxy_socket = connect({
+                    hostname: PROXY_IP,
+                    port: 443
+                }, { secureTransport: 'on' }); 
+
+                worker.accept();
+                
+                // Client (WebSocket) to Proxy (TCP) Relay
+                worker.addEventListener('message', async (event) => {
+                    try {
+                        await proxy_socket.writable.write(event.data);
+                    } catch (e) {
+                        worker.close(1001, "Proxy write error");
+                    }
+                });
+
+                // Proxy (TCP) to Client (WebSocket) Relay
+                const reader = proxy_socket.readable.getReader();
+                const process_data = async () => {
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            worker.send(value); 
+                        }
+                    } catch (e) {
+                        // Read error
+                    } finally {
+                        worker.close();
+                    }
+                };
+                
+                ctx.waitUntil(process_data());
+                
+                // Respond with 101 Switching Protocols
+                return new Response(null, {
+                    status: 101,
+                    webSocket: client
+                });
+
+            } catch (e) {
+                // Handle Outbound TCP Connection failure
+                return new Response("Outbound connection failed. PROXY_IP may be blocked or unreachable.", { status: 500 });
+            }
+        }
+        
+        // Default Landing/Status Page Response
+        return new Response(`VLESS Worker is active. Use ${PATH_PREFIX}${USERS_UUIDS[0]} to get config.`, { status: 200 });
     }
-    
-    // Main VLESS configuration generator
-    if (url.pathname === '/vless' || url.pathname === '/') {
-      const uuid = generateUUID();
-      const workerDomain = 'my-vless-003.workers.dev';
-      
-      // VLESS URL format
-      const vlessLink = `vless://${uuid}@${workerDomain}:443?encryption=none&security=tls&type=ws&host=${workerDomain}&path=%2Fvless#CF-VLESS-Worker`;
-      
-      // HTML response with the config
-      const htmlResponse = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>VLESS Config Generator</title>
-            <meta charset="utf-8">
-            <style>
-                body { font-family: Arial, sans-serif; margin: 40px; background: #f0f0f0; }
-                .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                .config-box { background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #007bff; margin: 20px 0; }
-                pre { word-wrap: break-word; white-space: pre-wrap; background: #e9ecef; padding: 10px; border-radius: 5px; }
-                .qr-code { text-align: center; margin: 20px 0; }
-                .info-box { background: #e7f3ff; padding: 15px; border-radius: 5px; margin: 15px 0; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>🚀 VLESS Configuration Generator</h1>
-                <p>Auto-generated VLESS config for Cloudflare Worker</p>
-                
-                <div class="config-box">
-                    <h3>📋 VLESS Link:</h3>
-                    <pre>${vlessLink}</pre>
-                </div>
-                
-                <div class="qr-code">
-                    <h3>📱 QR Code:</h3>
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(vlessLink)}" alt="QR Code">
-                    <p>Scan this QR code with your V2Ray client</p>
-                </div>
-                
-                <div class="info-box">
-                    <h3>🔧 Connection Details:</h3>
-                    <p><strong>UUID:</strong> ${uuid}</p>
-                    <p><strong>Server:</strong> ${workerDomain}</p>
-                    <p><strong>Port:</strong> 443</p>
-                    <p><strong>Path:</strong> /vless</p>
-                    <p><strong>Transport:</strong> WebSocket (WS)</p>
-                    <p><strong>TLS:</strong> Enabled</p>
-                </div>
-                
-                <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 5px;">
-                    <h3>📲 How to Use:</h3>
-                    <ol>
-                        <li>Copy the VLESS link above</li>
-                        <li>Open your V2Ray client (V2RayN, Shadowrocket, etc.)</li>
-                        <li>Import from clipboard or scan QR code</li>
-                        <li>Connect and enjoy!</li>
-                    </ol>
-                </div>
-            </div>
-        </body>
-        </html>
-      `;
-      
-      return new Response(htmlResponse, {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-        },
-      });
-    }
-    
-    // API endpoint for raw config
-    if (url.pathname === '/config.json') {
-      const uuid = generateUUID();
-      const workerDomain = 'my-vless-001.workers.dev';
-      
-      const config = {
-        "server": workerDomain,
-        "port": "443",
-        "uuid": uuid,
-        "path": "/vless",
-        "encryption": "none",
-        "transport": "ws",
-        "tls": true
-      };
-      
-      return new Response(JSON.stringify(config
+};
